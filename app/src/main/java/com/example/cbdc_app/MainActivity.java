@@ -6,6 +6,7 @@ import android.os.Bundle;
 import android.util.Base64;
 import android.util.Log;
 import android.view.View;
+import android.widget.TextView;
 
 import com.android.volley.Request;
 import com.android.volley.RequestQueue;
@@ -66,7 +67,8 @@ public class MainActivity extends AppCompatActivity {
     public String UserPublicKeyExchangeStringBase64;
 
     public String CurrencyCipherString;
-    public ArrayList <String> currencyList;
+    public ArrayList<String> currencyList = new ArrayList<String>();
+    public String UserUUID = "30a1bf87-b0e1-4921-a0b8-8c602af1f391";
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -86,8 +88,8 @@ public class MainActivity extends AppCompatActivity {
             UserPrivateKey = privateKey.getEncoded();
             UserPublicKeyB64String = new String(Base64.encode(UserPublicKey, Base64.DEFAULT), StandardCharsets.UTF_8);
             UserPrivateKeyB64String = new String(Base64.encode(UserPrivateKey, Base64.DEFAULT), StandardCharsets.UTF_8);
-            UserPublicKeyExchangeString=PUBLIC_KEY_HEADER+"\n"+UserPublicKeyB64String+PUBLIC_KEY_FOOTER;
-            UserPublicKeyExchangeStringBase64=new String(Base64.encode(UserPublicKeyExchangeString.getBytes(StandardCharsets.UTF_8), Base64.DEFAULT), StandardCharsets.UTF_8);
+            UserPublicKeyExchangeString = PUBLIC_KEY_HEADER + "\n" + UserPublicKeyB64String + PUBLIC_KEY_FOOTER;
+            UserPublicKeyExchangeStringBase64 = new String(Base64.encode(UserPublicKeyExchangeString.getBytes(StandardCharsets.UTF_8), Base64.DEFAULT), StandardCharsets.UTF_8);
             Log.d("User Public key", UserPublicKeyB64String);
             Log.d("User Public key PEM", UserPublicKeyExchangeString);
             Log.d("User Private key", UserPrivateKeyB64String);
@@ -172,29 +174,32 @@ public class MainActivity extends AppCompatActivity {
 
             //!!!!!!
             public String RSADecrypt(byte[] B64Bytes, byte[] privateKey) throws NoSuchPaddingException, NoSuchAlgorithmException, InvalidKeySpecException, InvalidKeyException, BadPaddingException, IllegalBlockSizeException, NoSuchProviderException, InvalidAlgorithmParameterException, UnsupportedEncodingException {
-                Log.d("Try to Decrypt","Try to Decrypt");
+                Log.d("Try to Decrypt", "Try to Decrypt");
                 Cipher c = Cipher.getInstance(RSA_CONFIGURATION, RSA_PROVIDER);
                 KeyFactory keyFactory = KeyFactory.getInstance("RSA");
-                PrivateKey key=keyFactory.generatePrivate(new PKCS8EncodedKeySpec(privateKey));
+                PrivateKey key = keyFactory.generatePrivate(new PKCS8EncodedKeySpec(privateKey));
                 c.init(Cipher.DECRYPT_MODE, key, new OAEPParameterSpec("SHA-256", "MGF1", MGF1ParameterSpec.SHA256, PSource.PSpecified.DEFAULT));
                 byte[] decodedBytes = c.doFinal(B64Bytes);
-                Log.d("Currency",new String(decodedBytes,"UTF-8"));
-                return new String(decodedBytes,"UTF-8");
+                Log.d("Currency", new String(decodedBytes, "UTF-8"));
+                return new String(decodedBytes, "UTF-8");
             }
 
             @Override
             public void onResponse(String response) {
                 try {
                     JSONObject respObj = new JSONObject(response);
-                    Log.d("Cipher Currency and All responses",respObj.getString("cipher_currency"));
-                    JSONArray resArr =respObj.getJSONArray("cipher_currency");
-                    respObj =resArr.getJSONObject(0);
-                    CurrencyCipherString=respObj.getString("Currency");
-                    byte[]CurrencyCipherB64ByteArray=CurrencyCipherString.getBytes(StandardCharsets.UTF_8);
-                    byte[]CurrencyCipherDecodeByte=Base64.decode(CurrencyCipherB64ByteArray,Base64.NO_WRAP);
-                    Log.d("Cipher Currency",CurrencyCipherString);
-                    String currency=this.RSADecrypt(CurrencyCipherDecodeByte,UserPrivateKey);
+                    Log.d("Cipher Currency and All responses", respObj.getString("cipher_currency"));
+                    JSONArray resArr = respObj.getJSONArray("cipher_currency");
+                    respObj = resArr.getJSONObject(0);
+                    CurrencyCipherString = respObj.getString("Currency");
+                    byte[] CurrencyCipherB64ByteArray = CurrencyCipherString.getBytes(StandardCharsets.UTF_8);
+                    byte[] CurrencyCipherDecodeByte = Base64.decode(CurrencyCipherB64ByteArray, Base64.NO_WRAP);
+                    Log.d("Cipher Currency", CurrencyCipherString);
+                    String currency = this.RSADecrypt(CurrencyCipherDecodeByte, UserPrivateKey);
                     currencyList.add(currency);
+                    int numberOfCurrency = currencyList.size();
+                    TextView currencyText = findViewById(R.id.currencyText);
+                    currencyText.setText("餘額:" + String.valueOf(numberOfCurrency));
 
                 } catch (Exception e) {
                     e.printStackTrace();
@@ -217,11 +222,12 @@ public class MainActivity extends AppCompatActivity {
             }
         };
         /*(End)Step3 Send encrypted user info to bank and get currency*/
-
-
         queue.add(stringRequest1);
         queue.add(stringRequest2);
+    }
 
+    public void onBuyBtnClick(View view) {
 
     }
 }
+
