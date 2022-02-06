@@ -14,6 +14,7 @@ import com.android.volley.VolleyError;
 import com.android.volley.toolbox.StringRequest;
 import com.android.volley.toolbox.Volley;
 
+import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
@@ -60,6 +61,10 @@ public class MainActivity extends AppCompatActivity {
     public byte[] UserPrivateKey;
     public String UserPublicKeyB64String;
     public String UserPrivateKeyB64String;
+    public String UserPublicKeyExchangeString;
+    public String UserPublicKeyExchangeStringBase64;
+
+    public String CurrencyCipherString;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -79,7 +84,10 @@ public class MainActivity extends AppCompatActivity {
             UserPrivateKey = privateKey.getEncoded();
             UserPublicKeyB64String = new String(Base64.encode(UserPublicKey, Base64.DEFAULT), StandardCharsets.UTF_8);
             UserPrivateKeyB64String = new String(Base64.encode(UserPrivateKey, Base64.DEFAULT), StandardCharsets.UTF_8);
+            UserPublicKeyExchangeString=PUBLIC_KEY_HEADER+"\n"+UserPublicKeyB64String+PUBLIC_KEY_FOOTER;
+            UserPublicKeyExchangeStringBase64=new String(Base64.encode(UserPublicKeyExchangeString.getBytes(StandardCharsets.UTF_8), Base64.DEFAULT), StandardCharsets.UTF_8);
             Log.d("User Public key", UserPublicKeyB64String);
+            Log.d("User Public key PEM", UserPublicKeyExchangeString);
             Log.d("User Private key", UserPrivateKeyB64String);
         } catch (Exception e) {
             e.printStackTrace();
@@ -159,13 +167,34 @@ public class MainActivity extends AppCompatActivity {
 
         /* Step3 Send encrypted user info to bank and get currency*/
         StringRequest stringRequest2 = new StringRequest(Request.Method.POST, BankWithdrawUrl, new com.android.volley.Response.Listener<String>() {
+
+            //!!!!!!
+            public String RSADecrypt(byte[] B64Bytes, byte[] privateKey) throws NoSuchPaddingException, NoSuchAlgorithmException, InvalidKeySpecException, InvalidKeyException, BadPaddingException, IllegalBlockSizeException, NoSuchProviderException, InvalidAlgorithmParameterException, UnsupportedEncodingException {
+                Log.d("Try to Decrypt","Try to Decrypt");
+                Cipher c = Cipher.getInstance(RSA_CONFIGURATION, RSA_PROVIDER);
+                KeyFactory keyFactory = KeyFactory.getInstance("RSA");
+                PrivateKey key=keyFactory.generatePrivate(new PKCS8EncodedKeySpec(privateKey));
+                c.init(Cipher.DECRYPT_MODE, key, new OAEPParameterSpec("SHA-256", "MGF1", MGF1ParameterSpec.SHA256, PSource.PSpecified.DEFAULT));
+                byte[] decodedBytes = c.doFinal(B64Bytes);
+                Log.d("Currency",new String(decodedBytes,"UTF-8"));
+                return new String(decodedBytes,"UTF-8");
+            }
+
             @Override
             public void onResponse(String response) {
                 try {
                     JSONObject respObj = new JSONObject(response);
-                    Log.d("Log", response);
+                    Log.d("Cipher Currency and All responses",respObj.getString("cipher_currency"));
+                    JSONArray resArr =respObj.getJSONArray("cipher_currency");
+                    respObj =resArr.getJSONObject(0);
+                    CurrencyCipherString=respObj.getString("Currency");
+                    byte[]CurrencyCipherB64ByteArray=CurrencyCipherString.getBytes(StandardCharsets.UTF_8);
+                    byte[]CurrencyCipherDecodeByte=Base64.decode(CurrencyCipherB64ByteArray,Base64.NO_WRAP);
+                    Log.d("Cipher Currency",CurrencyCipherString);
+                    String currency=this.RSADecrypt(CurrencyCipherDecodeByte,UserPrivateKey);
 
-                } catch (JSONException e) {
+
+                } catch (Exception e) {
                     e.printStackTrace();
                 }
             }
@@ -180,7 +209,7 @@ public class MainActivity extends AppCompatActivity {
                 Map<String, String> params = new HashMap<String, String>();
 
                 params.put("cipher_user_input", CipherUserInfoB64);
-                params.put("user_rsa_public_key", CipherUserInfoB64);
+                params.put("user_rsa_public_key", UserPublicKeyExchangeStringBase64);
 
                 return params;
             }
