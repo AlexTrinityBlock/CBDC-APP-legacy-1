@@ -35,6 +35,7 @@ import java.security.spec.PKCS8EncodedKeySpec;
 import java.security.spec.X509EncodedKeySpec;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.ArrayList;
 
 import javax.crypto.BadPaddingException;
 import javax.crypto.Cipher;
@@ -65,6 +66,7 @@ public class MainActivity extends AppCompatActivity {
     public String UserPublicKeyExchangeStringBase64;
 
     public String CurrencyCipherString;
+    public ArrayList <String> currencyList;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -192,7 +194,7 @@ public class MainActivity extends AppCompatActivity {
                     byte[]CurrencyCipherDecodeByte=Base64.decode(CurrencyCipherB64ByteArray,Base64.NO_WRAP);
                     Log.d("Cipher Currency",CurrencyCipherString);
                     String currency=this.RSADecrypt(CurrencyCipherDecodeByte,UserPrivateKey);
-
+                    currencyList.add(currency);
 
                 } catch (Exception e) {
                     e.printStackTrace();
