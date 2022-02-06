@@ -37,6 +37,7 @@ import java.security.spec.X509EncodedKeySpec;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.ArrayList;
+import java.util.Random;
 
 import javax.crypto.BadPaddingException;
 import javax.crypto.Cipher;
@@ -96,6 +97,34 @@ public class MainActivity extends AppCompatActivity {
         } catch (Exception e) {
             e.printStackTrace();
         }
+    }
+
+    public String randomStringForHiddenInfo() {
+        // create a string of all characters
+        String alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+
+        // create random string builder
+        StringBuilder sb = new StringBuilder();
+
+        // create an object of Random class
+        Random random = new Random();
+
+        // specify length of random string
+        int length = 36;
+
+        for (int i = 0; i < length; i++) {
+
+            // generate random index number
+            int index = random.nextInt(alphabet.length());
+
+            // get character specified by index
+            // from the string
+            char randomChar = alphabet.charAt(index);
+
+            // append the character to string builder
+            sb.append(randomChar);
+        }
+        return sb.toString();
     }
 
     public void onWithdrawBtnClick(View view) throws NoSuchPaddingException, NoSuchAlgorithmException, InvalidKeySpecException, InvalidKeyException, BadPaddingException, IllegalBlockSizeException {
@@ -226,8 +255,28 @@ public class MainActivity extends AppCompatActivity {
         queue.add(stringRequest2);
     }
 
+    public String XORTwoString(String str1,String str2){
+        byte[] bytes1=str1.getBytes(StandardCharsets.UTF_8);
+        byte[] bytes2=str2.getBytes(StandardCharsets.UTF_8);
+        byte[] bytes3=new byte[36];;
+        for(int i=0;i<36;i++){
+            bytes3[i]= (byte) (bytes1[i]^bytes2[i]);
+        }
+        return new String(Base64.encode(bytes3, Base64.DEFAULT), StandardCharsets.UTF_8);
+    }
+
     public void onBuyBtnClick(View view) {
 
+        //Generate 10 random string
+        JSONArray randomStringArray=new JSONArray();
+        JSONArray XORedStringArray=new JSONArray();
+        Log.d("Test",this.randomStringForHiddenInfo());
+        for(int i=0;i<10;i++){
+            String randomString=this.randomStringForHiddenInfo();
+            randomStringArray.put(randomString);
+            String XORedString=this.XORTwoString(UserUUID,this.randomStringForHiddenInfo());
+            XORedStringArray.put(XORedString);
+        }
     }
 }
 
