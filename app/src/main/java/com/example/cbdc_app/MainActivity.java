@@ -8,18 +8,37 @@ import android.util.Log;
 import android.view.View;
 import android.widget.TextView;
 
+import com.android.volley.AuthFailureError;
+import com.android.volley.NetworkResponse;
 import com.android.volley.Request;
 import com.android.volley.RequestQueue;
 import com.android.volley.Response;
 import com.android.volley.VolleyError;
+import com.android.volley.toolbox.HttpResponse;
 import com.android.volley.toolbox.StringRequest;
 import com.android.volley.toolbox.Volley;
+import com.google.firebase.crashlytics.buildtools.reloc.org.apache.http.HttpEntity;
+import com.google.firebase.crashlytics.buildtools.reloc.org.apache.http.client.methods.CloseableHttpResponse;
+import com.google.firebase.crashlytics.buildtools.reloc.org.apache.http.client.methods.HttpGet;
+import com.google.firebase.crashlytics.buildtools.reloc.org.apache.http.client.methods.HttpPost;
+import com.google.firebase.crashlytics.buildtools.reloc.org.apache.http.client.methods.HttpUriRequest;
+import com.google.firebase.crashlytics.buildtools.reloc.org.apache.http.impl.client.CloseableHttpClient;
+import com.google.firebase.crashlytics.buildtools.reloc.org.apache.http.impl.client.DefaultHttpClient;
+import com.google.firebase.crashlytics.buildtools.reloc.org.apache.http.impl.client.HttpClientBuilder;
 
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
+import java.io.BufferedInputStream;
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.io.UnsupportedEncodingException;
+import java.net.HttpURLConnection;
+import java.net.URI;
+import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.security.InvalidAlgorithmParameterException;
 import java.security.InvalidKeyException;
@@ -56,6 +75,8 @@ public class MainActivity extends AppCompatActivity {
 
     public String BankPublicKeyURL = "http://10.0.2.2:8080/public-key/user/withdraw";
     public String BankWithdrawUrl = "http://10.0.2.2:8080/get-currency";
+    public String SendCurrencyToStoreURL = "http://10.0.2.2:7070/get-currency";
+
     public String BankPublicKeyBase64 = "";
     public String BankPublicKeyJson = "";
     public String CipherUserInfoB64 = "";
@@ -66,6 +87,8 @@ public class MainActivity extends AppCompatActivity {
     public String UserPrivateKeyB64String;
     public String UserPublicKeyExchangeString;
     public String UserPublicKeyExchangeStringBase64;
+
+    public String StoreSessionKey;
 
     public String CurrencyCipherString;
     public ArrayList<String> currencyList = new ArrayList<String>();
@@ -97,6 +120,17 @@ public class MainActivity extends AppCompatActivity {
         } catch (Exception e) {
             e.printStackTrace();
         }
+    }
+
+    public String XORTwoString(String str1, String str2) {
+        byte[] bytes1 = str1.getBytes(StandardCharsets.UTF_8);
+        byte[] bytes2 = str2.getBytes(StandardCharsets.UTF_8);
+        byte[] bytes3 = new byte[36];
+        ;
+        for (int i = 0; i < 36; i++) {
+            bytes3[i] = (byte) (bytes1[i] ^ bytes2[i]);
+        }
+        return new String(Base64.encode(bytes3, Base64.DEFAULT), StandardCharsets.UTF_8);
     }
 
     public String randomStringForHiddenInfo() {
@@ -255,28 +289,92 @@ public class MainActivity extends AppCompatActivity {
         queue.add(stringRequest2);
     }
 
-    public String XORTwoString(String str1,String str2){
-        byte[] bytes1=str1.getBytes(StandardCharsets.UTF_8);
-        byte[] bytes2=str2.getBytes(StandardCharsets.UTF_8);
-        byte[] bytes3=new byte[36];;
-        for(int i=0;i<36;i++){
-            bytes3[i]= (byte) (bytes1[i]^bytes2[i]);
-        }
-        return new String(Base64.encode(bytes3, Base64.DEFAULT), StandardCharsets.UTF_8);
-    }
 
-    public void onBuyBtnClick(View view) {
+    public void onBuyBtnClick(View view) throws IOException {
 
         //Generate 10 random string
-        JSONArray randomStringArray=new JSONArray();
-        JSONArray XORedStringArray=new JSONArray();
-        Log.d("Test",this.randomStringForHiddenInfo());
-        for(int i=0;i<10;i++){
-            String randomString=this.randomStringForHiddenInfo();
+        JSONArray randomStringArray = new JSONArray();
+        JSONArray XORedStringArray = new JSONArray();
+        Log.d("Test", this.randomStringForHiddenInfo());
+        for (int i = 0; i < 10; i++) {
+            String randomString = this.randomStringForHiddenInfo();
             randomStringArray.put(randomString);
-            String XORedString=this.XORTwoString(UserUUID,this.randomStringForHiddenInfo());
+            String XORedString = this.XORTwoString(UserUUID, this.randomStringForHiddenInfo());
             XORedStringArray.put(XORedString);
         }
+
+        //Get binary String
+        //https://stackoverflow.com/questions/678630/how-do-i-make-an-http-request-using-cookies-on-android
+        //https://stackoverflow.com/questions/15336477/deprecated-java-httpclient-how-hard-can-it-be
+        //https://developer.android.com/reference/java/net/HttpURLConnection
+        //https://blog.csdn.net/u013872857/article/details/71524502 //還沒讀
+        //https://stackoverflow.com/questions/38591983/how-to-get-cookies-from-volley-response  //採用
+        String StoreBinaryStringUrl="http://10.0.2.2:7070/start-transaction/get-binary-string";
+        RequestQueue queue = Volley.newRequestQueue(this);
+        StringRequest stringRequest1 = new StringRequest(Request.Method.GET, StoreBinaryStringUrl,
+                new Response.Listener<String>() {
+                    @Override
+                    public void onResponse(String response) {
+                        Log.i("response",response);
+                    }
+                },
+                new Response.ErrorListener() {
+                    @Override
+                    public void onErrorResponse(VolleyError error) {
+                        Log.i("error",error.getMessage());
+                    }
+                }){
+            @Override
+            protected Response<String> parseNetworkResponse(NetworkResponse response) {
+                Map<String, String> responseHeaders = response.headers;
+                String rawCookies = responseHeaders.get("Set-Cookie");
+                StoreSessionKey =rawCookies;
+                Log.i("cookies",rawCookies);
+
+                return super.parseNetworkResponse(response);
+            }
+
+        };
+
+        //SendCurrency To Store
+        StringRequest stringRequest2 = new StringRequest(Request.Method.POST, SendCurrencyToStoreURL,
+                new Response.Listener<String>()
+                {
+                    @Override
+                    public void onResponse(String response) {
+                        // response
+                        Log.d("Response", response);
+                    }
+                },
+                new Response.ErrorListener()
+                {
+                    @Override
+                    public void onErrorResponse(VolleyError error) {
+                        Log.d("ERROR","error => "+error.toString());
+                    }
+                }
+        ) {
+            @Override
+            public Map<String, String> getHeaders() throws AuthFailureError {
+                Map<String, String>  headers = new HashMap<String, String>();
+                String cookieString=StoreSessionKey.replace("; HttpOnly; Path=/","");
+
+                StringBuilder builder = new StringBuilder();
+                builder.append("sessionid");
+                builder.append("=");
+                builder.append(cookieString);
+                if (headers.containsKey("Cookie")) {
+                    builder.append("; ");
+                    builder.append(headers.get("Cookie"));
+                }
+                headers.put("Cookie", builder.toString());
+
+                return headers;
+            }
+        };
+
+        queue.add(stringRequest1);
+        queue.add(stringRequest2);
     }
 }
 
