@@ -75,12 +75,21 @@ public class MainActivity extends AppCompatActivity {
 
     public String BankPublicKeyURL = "http://10.0.2.2:8080/public-key/user/withdraw";
     public String BankWithdrawUrl = "http://10.0.2.2:8080/get-currency";
+
     public String SendCurrencyToStoreURL = "http://10.0.2.2:7070/get-currency";
+    public String StoreBinaryStringUrl = "http://10.0.2.2:7070/start-transaction/get-binary-string";
+    public String StorePublicKeyStringUrl = "http://10.0.2.2:7070/store/public-key/";
 
     public String BankPublicKeyBase64 = "";
     public String BankPublicKeyJson = "";
-    public String CipherUserInfoB64 = "";
     public byte[] bankPublicKeyBytes;
+
+    public String StorePublicKeyBase64 = "";
+    public String StorePublicKeyJson = "";
+    public byte[] StorePublicKeyBytes;
+    public String StoreBinaryString = "";
+
+    public String CipherUserInfoB64 = "";
     public byte[] UserPublicKey;
     public byte[] UserPrivateKey;
     public String UserPublicKeyB64String;
@@ -91,7 +100,10 @@ public class MainActivity extends AppCompatActivity {
     public String StoreSessionKey;
 
     public String CurrencyCipherString;
+    public String XORResultJsonString;
+    public String OneEncryptCurrency;
     public ArrayList<String> currencyList = new ArrayList<String>();
+    public ArrayList<String> bankSignatureList = new ArrayList<String>();
     public String UserUUID = "30a1bf87-b0e1-4921-a0b8-8c602af1f391";
 
     @Override
@@ -122,7 +134,7 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-    public String XORTwoString(String str1, String str2) {
+    public static String XORTwoString(String str1, String str2) {
         byte[] bytes1 = str1.getBytes(StandardCharsets.UTF_8);
         byte[] bytes2 = str2.getBytes(StandardCharsets.UTF_8);
         byte[] bytes3 = new byte[36];
@@ -130,10 +142,11 @@ public class MainActivity extends AppCompatActivity {
         for (int i = 0; i < 36; i++) {
             bytes3[i] = (byte) (bytes1[i] ^ bytes2[i]);
         }
-        return new String(Base64.encode(bytes3, Base64.DEFAULT), StandardCharsets.UTF_8);
+        return new String(Base64.encode(bytes3, Base64.NO_WRAP), StandardCharsets.UTF_8);
     }
 
-    public String randomStringForHiddenInfo() {
+
+    public static String randomStringForHiddenInfo() {
         // create a string of all characters
         String alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
 
@@ -159,6 +172,23 @@ public class MainActivity extends AppCompatActivity {
             sb.append(randomChar);
         }
         return sb.toString();
+    }
+
+    public static String RSAEncrypt(byte[] UTF8StringBytes, byte[] publicKey) throws NoSuchPaddingException, NoSuchAlgorithmException, InvalidKeySpecException, InvalidKeyException, BadPaddingException, IllegalBlockSizeException, NoSuchProviderException, InvalidAlgorithmParameterException, UnsupportedEncodingException {
+        //Prepare Key
+        String publicKeyString = new String(publicKey, StandardCharsets.UTF_8);
+        KeyFactory keyFactory = KeyFactory.getInstance("RSA");
+        publicKeyString = publicKeyString.replace(PUBLIC_KEY_HEADER, "");
+        publicKeyString = publicKeyString.replace(PUBLIC_KEY_FOOTER, "");
+        Log.d("Public key", publicKeyString);
+        PublicKey publicKeyObject = keyFactory.generatePublic(new X509EncodedKeySpec(Base64.decode(publicKeyString, Base64.NO_WRAP)));
+        //Try to encrypt
+        Cipher c = Cipher.getInstance(RSA_CONFIGURATION, RSA_PROVIDER);
+        c.init(Cipher.ENCRYPT_MODE, publicKeyObject, new OAEPParameterSpec("SHA-256", "MGF1", MGF1ParameterSpec.SHA256, PSource.PSpecified.DEFAULT));
+        byte[] encodedBytes = Base64.encode(c.doFinal(UTF8StringBytes), Base64.DEFAULT);
+        String cipherText = new String(encodedBytes, "UTF-8");
+        Log.d("Cipher Text", cipherText);
+        return cipherText;
     }
 
     public void onWithdrawBtnClick(View view) throws NoSuchPaddingException, NoSuchAlgorithmException, InvalidKeySpecException, InvalidKeyException, BadPaddingException, IllegalBlockSizeException {
@@ -260,6 +290,7 @@ public class MainActivity extends AppCompatActivity {
                     Log.d("Cipher Currency", CurrencyCipherString);
                     String currency = this.RSADecrypt(CurrencyCipherDecodeByte, UserPrivateKey);
                     currencyList.add(currency);
+                    bankSignatureList.add(respObj.getString("BankSignature"));
                     int numberOfCurrency = currencyList.size();
                     TextView currencyText = findViewById(R.id.currencyText);
                     currencyText.setText("餘額:" + String.valueOf(numberOfCurrency));
@@ -291,90 +322,153 @@ public class MainActivity extends AppCompatActivity {
 
 
     public void onBuyBtnClick(View view) throws IOException {
-
-        //Generate 10 random string
-        JSONArray randomStringArray = new JSONArray();
-        JSONArray XORedStringArray = new JSONArray();
-        Log.d("Test", this.randomStringForHiddenInfo());
-        for (int i = 0; i < 10; i++) {
-            String randomString = this.randomStringForHiddenInfo();
-            randomStringArray.put(randomString);
-            String XORedString = this.XORTwoString(UserUUID, this.randomStringForHiddenInfo());
-            XORedStringArray.put(XORedString);
-        }
-
         //Get binary String
         //https://stackoverflow.com/questions/678630/how-do-i-make-an-http-request-using-cookies-on-android
         //https://stackoverflow.com/questions/15336477/deprecated-java-httpclient-how-hard-can-it-be
         //https://developer.android.com/reference/java/net/HttpURLConnection
         //https://blog.csdn.net/u013872857/article/details/71524502 //還沒讀
         //https://stackoverflow.com/questions/38591983/how-to-get-cookies-from-volley-response  //採用
-        String StoreBinaryStringUrl="http://10.0.2.2:7070/start-transaction/get-binary-string";
         RequestQueue queue = Volley.newRequestQueue(this);
         StringRequest stringRequest1 = new StringRequest(Request.Method.GET, StoreBinaryStringUrl,
                 new Response.Listener<String>() {
                     @Override
                     public void onResponse(String response) {
-                        Log.i("response",response);
+                        StoreBinaryString = response;
+                        Log.i("StoreBinaryString", response);
+                        //XOR two String
+                        //Generate 10 random string
+                        JSONArray XORedStringArray = new JSONArray();
+                        Log.d("Test", MainActivity.randomStringForHiddenInfo());
+                        for (int i = 0; i < 10; i++) {
+                            String randomString = MainActivity.randomStringForHiddenInfo();
+                            String XORedString = MainActivity.XORTwoString(UserUUID, MainActivity.randomStringForHiddenInfo());
+
+                            if (StoreBinaryString.charAt(i) == '0') {
+                                XORedStringArray.put(randomString);
+                            } else {
+                                XORedStringArray.put(MainActivity.XORTwoString(randomString, XORedString));
+                            }
+                        }
+                        XORResultJsonString = XORedStringArray.toString();
+                        Log.d("Json XOR", XORResultJsonString);
+
                     }
                 },
                 new Response.ErrorListener() {
                     @Override
                     public void onErrorResponse(VolleyError error) {
-                        Log.i("error",error.getMessage());
+                        Log.i("error", error.getMessage());
                     }
-                }){
-            @Override
-            protected Response<String> parseNetworkResponse(NetworkResponse response) {
-                Map<String, String> responseHeaders = response.headers;
-                String rawCookies = responseHeaders.get("Set-Cookie");
-                StoreSessionKey =rawCookies;
-                Log.i("cookies",rawCookies);
-
-                return super.parseNetworkResponse(response);
-            }
+                }) {
+//            @Override
+//            protected Response<String> parseNetworkResponse(NetworkResponse response) {
+//                Map<String, String> responseHeaders = response.headers;
+//                String rawCookies = responseHeaders.get("Set-Cookie");
+//                StoreSessionKey = rawCookies;
+//                StoreSessionKey = StoreSessionKey.replace("; HttpOnly; Path=/", "");
+//                StoreSessionKey = StoreSessionKey.replace("\n", "");
+//                Log.i("cookies", StoreSessionKey);
+//
+//                return super.parseNetworkResponse(response);
+//            }
 
         };
+        //(End)Get binary String
 
-        //SendCurrency To Store
-        StringRequest stringRequest2 = new StringRequest(Request.Method.POST, SendCurrencyToStoreURL,
-                new Response.Listener<String>()
-                {
+        //Get Store Public key
+        StringRequest stringRequest2 = new StringRequest(Request.Method.GET, StorePublicKeyStringUrl,
+                new Response.Listener<String>() {
+                    @Override
+                    public void onResponse(String response) {
+
+                        JSONObject respObj = null;
+                        try {
+                            //Decode Store Public key
+                            respObj = new JSONObject(response);
+                            StorePublicKeyBase64 = respObj.getString("PublicKey");
+                            StorePublicKeyBytes = Base64.decode(StorePublicKeyBase64, Base64.NO_WRAP);
+                            StorePublicKeyBase64 = new String(StorePublicKeyBytes, "UTF-8");
+                            StorePublicKeyBase64 = StorePublicKeyBase64.replace(PUBLIC_KEY_HEADER, "");
+                            StorePublicKeyBase64 = StorePublicKeyBase64.replace(PUBLIC_KEY_FOOTER, "");
+                            Log.d("Response", StorePublicKeyBase64);
+//                            StorePublicKeyBytes = Base64.decode(StorePublicKeyBase64, Base64.NO_WRAP);
+
+                            //Encrypt Currency
+                            if (currencyList.size() > 0) {
+                                JSONArray CipherCurrencyAndBankSignatureArray = new JSONArray();
+                                String elementCurrency = currencyList.get(0);
+                                String elementSignature = bankSignatureList.get(0);
+                                Log.d("Currency", elementCurrency);
+                                OneEncryptCurrency = MainActivity.RSAEncrypt(elementCurrency.getBytes(StandardCharsets.UTF_8),StorePublicKeyBytes);
+                                JSONObject elementObject=new JSONObject();
+                                elementObject.put("CipherCurrency",OneEncryptCurrency);
+                                elementObject.put("BankSignature",elementSignature);
+                                CipherCurrencyAndBankSignatureArray.put(elementObject);
+                                OneEncryptCurrency =CipherCurrencyAndBankSignatureArray.toString();
+                                Log.d("Json",OneEncryptCurrency);
+                            }
+
+
+                        } catch (Exception e) {
+                            e.printStackTrace();
+                        }
+                    }
+                },
+                new Response.ErrorListener() {
+                    @Override
+                    public void onErrorResponse(VolleyError error) {
+                        Log.i("error", error.getMessage());
+                    }
+                }) {
+
+        };
+        //(End)Get Store Public key
+
+
+        //Send Currency ,BankSignature and HiddenUserInfoList  To Store
+        StringRequest stringRequest3 = new StringRequest(Request.Method.POST, SendCurrencyToStoreURL,
+                new Response.Listener<String>() {
                     @Override
                     public void onResponse(String response) {
                         // response
-                        Log.d("Response", response);
+                        try {
+                            Log.d("Final Res",response);
+                            JSONObject responseObj=new JSONObject(response);
+                            if(responseObj.getString("Status").equals("Sucsess")){
+                                String elementCurrency = currencyList.get(0);
+                                String elementSignature = bankSignatureList.get(0);
+                                currencyList.remove(elementCurrency);
+                                bankSignatureList.remove(elementSignature);
+                                TextView currencyText = findViewById(R.id.currencyText);
+                                currencyText.setText("餘額:" + String.valueOf(currencyList.size()));
+
+                            }
+                        } catch (Exception e) {
+                            e.printStackTrace();
+                        }
+
                     }
                 },
-                new Response.ErrorListener()
-                {
+                new Response.ErrorListener() {
                     @Override
                     public void onErrorResponse(VolleyError error) {
-                        Log.d("ERROR","error => "+error.toString());
+                        Log.d("ERROR", "error => " + error.toString());
                     }
                 }
         ) {
             @Override
-            public Map<String, String> getHeaders() throws AuthFailureError {
-                Map<String, String>  headers = new HashMap<String, String>();
-                String cookieString=StoreSessionKey.replace("; HttpOnly; Path=/","");
+            protected Map<String, String> getParams() {
 
-                StringBuilder builder = new StringBuilder();
-                builder.append("sessionid");
-                builder.append("=");
-                builder.append(cookieString);
-                if (headers.containsKey("Cookie")) {
-                    builder.append("; ");
-                    builder.append(headers.get("Cookie"));
-                }
-                headers.put("Cookie", builder.toString());
-
-                return headers;
+                Map<String, String> params = new HashMap<String, String>();
+                params.put("CurrencyAndBankSignature", OneEncryptCurrency);
+                params.put("HiddenUserInfoList", XORResultJsonString);
+                return params;
             }
         };
 
         queue.add(stringRequest1);
         queue.add(stringRequest2);
+        queue.add(stringRequest3);
     }
 }
 
